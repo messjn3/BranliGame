@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>La carrera Inmortal</title>
+    <!-- Importamos Tailwind CSS para estilos rápidos generales -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Estilos visuales de la página y centrado del canvas */
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a202c;
+            touch-action: none; /* Evita gestos molestos en celulares al tocar */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        canvas {
+            background-color: #87CEEB; /* Color de cielo por defecto */
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            max-width: 100%;
+            max-height: 100%;
+            border-radius: 8px; 
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <!-- Lienzo principal donde se dibuja todo el juego -->
+    <canvas id="gameCanvas" width="800" height="450"></canvas>
+
+    <script>
+        // Obtenemos el elemento canvas y su contexto gráfico en 2D
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // ==========================================
+        // VARIABLES GLOBALES DE ESTADO DEL JUEGO
+        // ==========================================
+        let score = 0;              // Puntuación actual del jugador
+        let isGameOver = false;     // Bandera para saber si el jugador perdió
+        let isGameStarted = false;  // Bandera para saber si el juego ha comenzado (pantalla de inicio)
+        let frameCount = 0;         // Contador total de fotogramas (sirve para tiempos y animaciones)
+        let gameSpeed = 4;          // Velocidad global a la que se mueven los objetos
+        const groundHeight = 60;    // Altura reservada para el suelo/pasto en la parte inferior
+        let metaAlcanzada = false;  // Arranca en falso
+
+        const imgPortada = new Image();
+        imgPortada.src = 'portada.png';
+        const imgJugadorSprite = new Image();
+        imgJugadorSprite.src = 'jugador.png';
+        const imgEnemigos = new Image();
+        imgEnemigos.src = 'enemigos.png';
+        const imgPremio = new Image();
+        imgPremio.src = 'premio.png'; // Tu archivo de premio estático de 100x100 px
+		const imgFondo = new Image();
+imgFondo.src = 'fondo.png'; // Revisa que tu archivo se llame así en tu carpeta
+
+        // Variables para controlar el fondo infinito (Scrolling)
+        let bgX = 0;                // Posición X actual del desplazamiento del suelo
+        const bgSpeed = 2;          // Velocidad a la que se mueve el fondo
+
+        // Función para hacer que el canvas se adapte responsivamente a la pantalla del dispositivo
+        function resizeCanvas() {
+            const scale = Math.min(window.innerWidth / 800, window.innerHeight / 450);
+            if (scale < 1) {
+                canvas.style.transform = `scale(${scale})`;
+            } else {
+                canvas.style.transform = 'scale(1)';
+            }
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas(); // Ejecutar al cargar la página
+
+        // ==========================================
+        // OBJETO JUGADOR (PLAYER)
+        // ==========================================
+        const player = {
+            x: 100,               // Posición fija horizontal del jugador
+            y: 200,               // Posición vertical inicial
+            width: 70,            // Ancho de colisión
+            height: 70,           // Alto de colisión
+            velocityY: 0,         // Velocidad vertical actual (gravedad/impulso)
+            gravity: 0.4,         // Fuerza que empuja al jugador hacia abajo
+            lift: -7,             // Fuerza de impulso hacia arriba al mantener presionado
+            isFlying: false,      // Bandera para saber si el usuario está presionando para volar
+            
+            // Variables para la animación de sprites
+            frameX: 0,            // Cuadro (frame) actual de la animación horizontal
+            frameSpeed: 5,        // Cada cuántos fotogramas cambia de cuadro la animación
+            state: 'CAYENDO',     // Estado actual del jugador ('CORRIENDO', 'SALTANDO', 'CAYENDO')
+            
+            // Método de actualización de físicas y estados en cada fotograma
+            update: function() {
+                if (this.isFlying) {
+                    this.velocityY = this.lift;
+                } else {
+                    this.velocityY += this.gravity;
+                }
+                
+                this.y += this.velocityY;
+
+                let onGround = false;
+
+                if (this.y > canvas.height - groundHeight - this.height) {
+                    this.y = canvas.height - groundHeight - this.height;
+                    this.velocityY = 0;
+                    onGround = true;
+                }
+                if (this.y < 0) {
+                    this.y = 0;
+                    this.velocityY = 0;
+                }
+
+                let estadoAnterior = this.state;
+
+                // Máquina de estados
+                if (onGround) {
+                    this.state = 'CORRIENDO';
+                } else if (this.velocityY < 0) {
+                    this.state = 'SALTANDO';
+                } else {
+                    this.state = 'CAYENDO';
+                }
+
+                if (estadoAnterior !== this.state) {
+                    this.frameX = 0;
+                }
+
+                if (frameCount % this.frameSpeed === 0) {
+                    let totalCuadros = 4;   
+                    let seRepiteEnBucle = false; 
+
+                    if (this.state === 'CORRIENDO') {
+                        totalCuadros = 8;        
+                        seRepiteEnBucle = true; 
+                    } else if (this.state === 'SALTANDO') {
+                        totalCuadros = 3;        
+                    } else if (this.state === 'CAYENDO') {
+                        totalCuadros = 3;        
+                    }
+
+                    this.frameX++;
+
+                    if (seRepiteEnBucle) {
+                        if (this.frameX >= totalCuadros) {
+                            this.frameX = 0;
+                        }
+                    } else {
+                        if (this.frameX >= totalCuadros) {
+                            this.frameX = totalCuadros - 1;  
+                        }
+                    }
+                }
+            },
+               
+            // Método para dibujar al jugador en pantalla
+            draw: function() {
+                let filaActual = 0;
+                if (this.state === 'CORRIENDO') filaActual = 0; 
+                if (this.state === 'SALTANDO') filaActual = 1;  
+                if (this.state === 'CAYENDO') filaActual = 2;   
+                
+                const frameWidth = 100;  
+                const frameHeight = 100; 
+                const origenY = filaActual * frameHeight; 
+                const origenX = this.frameX * frameWidth;
+                
+                ctx.drawImage(imgJugadorSprite, origenX, origenY, frameWidth, frameHeight, this.x, this.y, this.width, this.height);
+            }
+        };
+
+        // Arrays para almacenar los enemigos y objetos de comida activos
+        let enemies = [];
+        let foods = [];
+
+        // ==========================================
+        // CLASE DE ENEMIGOS
+        // ==========================================
+        class Enemy {
+            constructor() {
+                this.x = canvas.width;
+                this.width = 60;  
+                this.height = 60;
+                this.tipo = Math.floor(Math.random() * 2); 
+
+                const alturaMaximaPermitida = canvas.height - groundHeight - this.height;
+                const margenSuperior = 20; 
+                this.y = Math.random() * (alturaMaximaPermitida - margenSuperior) + margenSuperior;
+
+                this.frameX = 0; 
+                this.markedForDeletion = false; // Para eliminarlo al salir de la pantalla
+            }
+
+            draw() {
+                const frameWidth = 100;  
+                const frameHeight = 100; 
+
+                const origenX = this.frameX * frameWidth;
+                const origenY = this.tipo * frameHeight; 
+
+                ctx.drawImage(
+                    imgEnemigos,
+                    origenX, origenY, frameWidth, frameHeight,
+                    this.x, this.y, this.width, this.height
+                );
+            }
+
+            update() {
+                this.x -= gameSpeed; 
+                if (this.x + this.width < 0) {
+                    this.markedForDeletion = true;
+                }
+            }
+        }
+
+        // ==========================================
+        // CLASE DE COMIDA / PREMIOS (ESTÁTICO 100x100)
+        // ==========================================
+        class Food {
+            constructor() {
+                this.x = canvas.width;
+                this.width = 60;  
+                this.height = 60;
+
+                const alturaMaximaPermitida = canvas.height - groundHeight - this.height;
+                const margenSuperior = 20; 
+                this.y = Math.random() * (alturaMaximaPermitida - margenSuperior) + margenSuperior;
+                
+                this.markedForDeletion = false;
+            }
+
+            update() {
+                this.x -= gameSpeed; 
+                if (this.x + this.width < 0) {
+                    this.markedForDeletion = true;
+                }
+            }
+
+            draw() {
+                ctx.drawImage(
+                    imgPremio,
+                    0, 0, 100, 100,
+                    this.x, this.y, this.width, this.height
+                );
+            }
+        }
+
+        // ==========================================
+        // CONTROLES DE ENTRADA (MOUSE, TÁCTIL Y TECLADO)
+        // ==========================================
+        function startFlying(e) {
+            if(e.type === 'touchstart') e.preventDefault(); 
+            if (isGameOver) { resetGame(); return; }         
+            if (!isGameStarted) { isGameStarted = true; return; } 
+            player.isFlying = true;                             
+        }
+
+        function stopFlying(e) {
+            if(e.type === 'touchend') e.preventDefault();
+            player.isFlying = false;                          
+        }
+
+        canvas.addEventListener('mousedown', startFlying);
+        window.addEventListener('mouseup', stopFlying);
+        canvas.addEventListener('touchstart', startFlying, {passive: false});
+        window.addEventListener('touchend', stopFlying, {passive: false});
+
+        window.addEventListener('keydown', function(e) {
+            if (e.code === 'Space' || e.code === 'ArrowUp') startFlying(e);
+        });
+        window.addEventListener('keyup', function(e) {
+            if (e.code === 'Space' || e.code === 'ArrowUp') stopFlying(e);
+        });
+
+        // ==========================================
+        // SISTEMA DE COLISIONES
+        // ==========================================
+        function checkCollisions() {
+            const margen = 15; // Margen de tolerancia para colisiones justas
+
+            // 1. Colisiones con Enemigos
+            for (let i = 0; i < enemies.length; i++) {
+                let e = enemies[i];
+                if (
+                    player.x + margen < e.x + e.width - margen &&
+                    player.x + player.width - margen > e.x + margen &&
+                    player.y + margen < e.y + e.height - margen &&
+                    player.y + player.height - margen > e.y + margen
+                ) {
+                    isGameOver = true; 
+                }
+            }
+
+            // 2. Colisiones con Comida / Premios
+            for (let i = 0; i < foods.length; i++) {
+                let f = foods[i];
+                if (
+                    player.x < f.x + f.width &&
+                    player.x + player.width > f.x &&
+                    player.y < f.y + f.height &&
+                    player.y + player.height > f.y
+                ) {
+                    score += 10;                    
+                    f.markedForDeletion = true;      
+                    if (score % 50 === 0) gameSpeed += 0.5; 
+                }
+            }
+        }
+
+        // ==========================================
+        // DIBUJO DEL FONDO INFINITO (PARALLAX)
+        // ==========================================
+      
+function drawBackground() {
+    bgX -= bgSpeed;
+    
+    // Como tu imagen mide 1600px, el ciclo se reinicia al llegar a -1600px
+    if (bgX <= -1600) {
+        bgX = 0; 
+    }
+
+    // Dibujamos la primera imagen en la posición bgX con su ancho real de 1600px
+    ctx.drawImage(imgFondo, bgX, 0, 1600, 450);
+
+    // Dibujamos la segunda copia exactamente al lado (a 1600px de distancia)
+    ctx.drawImage(imgFondo, bgX + 1600, 0, 1600, 450);
+}
+
+        // ==========================================
+        // FUNCIÓN DE REINICIO DEL JUEGO
+        // ==========================================
+        function resetGame() {
+            player.y = 200;
+            player.velocityY = 0;
+            enemies = [];
+            foods = [];
+            score = 0;
+            frameCount = 0;
+            gameSpeed = 4;
+            bgX = 0;
+            isGameOver = false;
+            metaAlcanzada = false; 
+        }
+
+        // ==========================================
+        // BUCLE PRINCIPAL DEL JUEGO (GAME LOOP)
+        // ==========================================
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Pantalla de Inicio
+            if (!isGameStarted) {
+                ctx.drawImage(imgPortada, 0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'black';
+                ctx.font = '40px "Bangers"';
+                ctx.textAlign = 'center';
+                ctx.fillText("La carrera INFINITA", canvas.width / 2, 100);
+                ctx.font = '20px Arial';
+                ctx.fillText("Usa la barra espaciadora o la flecha hacia arriba para saltar", canvas.width / 2, 130);
+                requestAnimationFrame(gameLoop);
+                return;
+            }
+
+            // Pantalla de Game Over
+            if (isGameOver) {
+                drawBackground();
+                player.draw();
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'black';
+                ctx.font = 'bold 50px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 20);
+                ctx.font = '25px Arial';
+                ctx.fillText(`Puntuación Final: ${score}`, canvas.width / 2, canvas.height / 2 + 25);
+                
+                // Si alcanzó la meta, se muestra el mensaje de retrato gratis en Game Over
+                if (metaAlcanzada) {
+                    ctx.fillStyle = 'gold'; 
+                    ctx.font = 'bold 22px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('¡RETRATO GRATIS! Recuerda tomar captura', canvas.width / 2, canvas.height / 2 + 65);
+                }
+
+                requestAnimationFrame(gameLoop);
+                return;
+            }
+
+            // Actualizar físicas
+            player.update();
+
+            // Verificar si se alcanzó la meta (puedes ajustar el puntaje objetivo, ej. 120 o 10130)
+            if (score >= 10000) {
+                metaAlcanzada = true; 
+            }
+
+            // Spawns automáticos
+            if (frameCount % 90 === 0) enemies.push(new Enemy());   
+            if (frameCount % 150 === 0) foods.push(new Food());     
+
+            // Actualizar y filtrar entidades
+            enemies.forEach(enemy => enemy.update());
+            enemies = enemies.filter(enemy => !enemy.markedForDeletion);
+            foods.forEach(food => food.update());
+            foods = foods.filter(food => !food.markedForDeletion);
+
+            // Colisiones
+            checkCollisions();
+
+            // Dibujar elementos en pantalla
+            drawBackground();
+            player.draw();
+            enemies.forEach(enemy => enemy.draw());
+            foods.forEach(food => food.draw());
+
+            // Puntuación en pantalla de juego
+            ctx.fillStyle = 'black';
+            ctx.font = 'bold 24px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText(`Puntos: ${score}`, 20, 40);
+
+            if (score >= 10000) {
+                ctx.fillStyle = 'blue'; 
+                ctx.font = 'bold 20px Arial';
+                ctx.textAlign = 'right'; 
+                ctx.fillText('¡Tienes un retrato gratis!', canvas.width - 20, 40);
+            }
+
+            frameCount++;
+            requestAnimationFrame(gameLoop);
+        }
+
+        window.onload = function() {
+            gameLoop();
+        };
+    </script>
+</body>
+</html>
